@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  unimate-ai:
+    build: .
+    container_name: unimate-ai
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - HOST=0.0.0.0
+      - APP_ENV=production
+      # Pass your Gemini API Key if using live model
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=gemini-2.5-flash
+    volumes:
+      # Persist SQLite database, uploaded PDFs/DOCX, and vector indices across restarts
+      - ./data:/app/data

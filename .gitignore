@@ -1,0 +1,24 @@
+# Virtual Environment
+venv/
+ENV/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+# Keep .env.example tracked!
+!.env.example

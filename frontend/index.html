@@ -1,0 +1,1411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UniMate AI — Intelligent University Assistant (RAG)</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- React & ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- Babel Standalone for JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              500: '#4f46e5',
+              600: '#4338ca',
+              700: '#3730a3',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased h-screen overflow-hidden">
+  <div id="root" class="h-full"></div>
+
+  <!-- React Application Logic -->
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    const API_BASE = window.location.origin.includes(":8000") 
+      ? window.location.origin 
+      : "http://localhost:8000";
+
+    function App() {
+      // Navigation & Role State
+      const [currentTab, setCurrentTab] = useState('chat'); // 'chat' | 'dashboard' | 'notices' | 'study' | 'admin'
+      const [role, setRole] = useState('student'); // 'student' | 'admin'
+      const [toast, setToast] = useState(null);
+
+      // Chat State
+      const [conversations, setConversations] = useState([]);
+      const [activeConvId, setActiveConvId] = useState(null);
+      const [messages, setMessages] = useState([]);
+      const [inputQuery, setInputQuery] = useState('');
+      const [isSending, setIsSending] = useState(false);
+      const [language, setLanguage] = useState('auto'); // 'auto', 'en', 'hi'
+      const [selectedCitation, setSelectedCitation] = useState(null);
+
+      // Documents State
+      const [documents, setDocuments] = useState([]);
+      const [docStats, setDocStats] = useState(null);
+      const [selectedDocChunks, setSelectedDocChunks] = useState(null);
+
+      // Notices & Events State
+      const [notices, setNotices] = useState([]);
+      const [noticeFilter, setNoticeFilter] = useState('all');
+      const [noticeSearch, setNoticeSearch] = useState('');
+      const [deadlines, setDeadlines] = useState([]);
+
+      // Study Assistant State
+      const [studyTopic, setStudyTopic] = useState('Academic Regulations 2026');
+      const [quizData, setQuizData] = useState(null);
+      const [quizAnswers, setQuizAnswers] = useState({});
+      const [quizSubmitted, setQuizSubmitted] = useState(false);
+      const [flashcards, setFlashcards] = useState(null);
+      const [flippedCards, setFlippedCards] = useState({});
+      const [isGeneratingStudy, setIsGeneratingStudy] = useState(false);
+
+      // Analytics State
+      const [analytics, setAnalytics] = useState(null);
+
+      // Feedback Modal
+      const [feedbackTarget, setFeedbackTarget] = useState(null);
+      const [feedbackComment, setFeedbackComment] = useState('');
+
+      const chatEndRef = useRef(null);
+
+      const showToast = (msg, type = 'info') => {
+        setToast({ msg, type });
+        setTimeout(() => setToast(null), 4000);
+      };
+
+      // Initial Data Loading
+      useEffect(() => {
+        loadConversations();
+        loadDocuments();
+        loadNotices();
+        loadDeadlines();
+        loadAnalytics();
+      }, []);
+
+      useEffect(() => {
+        if (window.lucide) {
+          window.lucide.createIcons();
+        }
+      }, [currentTab, messages, documents, notices, quizData, flashcards]);
+
+      useEffect(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, [messages]);
+
+      // API calls
+      const loadConversations = async () => {
+        try {
+          const res = await fetch(`${API_BASE}/api/chat/conversations`);
+          const data = await res.json();
+          setConversations(data);
+          if (data.length > 0 && !activeConvId) {
+            selectConversation(data[0].id);
+          }
+        } catch (e) {
+          console.error("Error loading conversations", e);
+        }
+      };
+
+      const selectConversation = async (convId) => {
+        setActiveConvId(convId);
+        try {
+          const res = await fetch(`${API_BASE}/api/chat/conversations/${convId}`);
+          if (res.ok) {
+            const data = await res.json();
+            setMessages(data.messages || []);
+          }
+        } catch (e) {
+          console.error("Error loading conversation messages", e);
+        }
+      };
+
+      const startNewConversation = async () => {
+        try {
+          const res = await fetch(`${API_BASE}/api/chat/conversations`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: 'New Conversation', language: language })
+          });
+          const newConv = await res.json();
+          setConversations([newConv, ...conversations]);
+          setActiveConvId(newConv.id);
+          setMessages([]);
+          showToast("Started a new conversation", "success");
+        } catch (e) {
+          showToast("Failed to create conversation", "error");
+        }
+      };
+
+      const loadDocuments = async () => {
+        try {
+          const [docRes, statRes] = await Promise.all([
+            fetch(`${API_BASE}/api/documents`),
+            fetch(`${API_BASE}/api/documents/stats/summary`)
+          ]);
+          if (docRes.ok) setDocuments(await docRes.json());
+          if (statRes.ok) setDocStats(await statRes.json());
+        } catch (e) {
+          console.error("Error loading documents", e);
+        }
+      };
+
+      const loadNotices = async () => {
+        try {
+          let url = `${API_BASE}/api/notices?category=${noticeFilter}`;
+          if (noticeSearch) url += `&search=${encodeURIComponent(noticeSearch)}`;
+          const res = await fetch(url);
+          if (res.ok) setNotices(await res.json());
+        } catch (e) {
+          console.error("Error loading notices", e);
+        }
+      };
+
+      const loadDeadlines = async () => {
+        try {
+          const res = await fetch(`${API_BASE}/api/notices/deadlines`);
+          if (res.ok) setDeadlines(await res.json());
+        } catch (e) {
+          console.error("Error loading deadlines", e);
+        }
+      };
+
+      const loadAnalytics = async () => {
+        try {
+          const res = await fetch(`${API_BASE}/api/analytics/overview`);
+          if (res.ok) setAnalytics(await res.json());
+        } catch (e) {
+          console.error("Error loading analytics", e);
+        }
+      };
+
+      const handleSendMessage = async (customPrompt = null) => {
+        const query = customPrompt || inputQuery;
+        if (!query.trim() || isSending) return;
+
+        setInputQuery('');
+        setIsSending(true);
+
+        // Optimistically show user message
+        const optimisticUserMsg = {
+          id: `temp_${Date.now()}`,
+          role: 'user',
+          content: query,
+          evidence_level: 'strong',
+          citations: [],
+          created_at: new Date().toISOString()
+        };
+        setMessages(prev => [...prev, optimisticUserMsg]);
+
+        try {
+          const res = await fetch(`${API_BASE}/api/chat/message`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              conversation_id: activeConvId,
+              message: query,
+              language: language
+            })
+          });
+
+          if (!res.ok) throw new Error("Failed to get response");
+          const asstMsg = await res.json();
+          
+          if (!activeConvId) {
+            setActiveConvId(asstMsg.conversation_id);
+            loadConversations();
+          }
+
+          setMessages(prev => [...prev, asstMsg]);
+          loadAnalytics();
+        } catch (err) {
+          setMessages(prev => [...prev, {
+            id: `err_${Date.now()}`,
+            role: 'assistant',
+            content: "⚠️ I encountered an error connecting to the knowledge base. Please check backend status.",
+            evidence_level: 'insufficient',
+            citations: [],
+            created_at: new Date().toISOString()
+          }]);
+        } finally {
+          setIsSending(false);
+        }
+      };
+
+      const handleFileUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("title", file.name.replace(/\.[^/.]+$/, ""));
+        formData.append("category", "academic");
+
+        showToast(`Uploading and indexing ${file.name}...`, "info");
+
+        try {
+          const res = await fetch(`${API_BASE}/api/documents/upload`, {
+            method: 'POST',
+            body: formData
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            showToast(`Indexed ${data.document.title} successfully!`, "success");
+            loadDocuments();
+            loadNotices();
+            loadDeadlines();
+          } else {
+            const err = await res.json();
+            showToast(err.detail || "Upload failed", "error");
+          }
+        } catch (e) {
+          showToast("Network error uploading document", "error");
+        }
+      };
+
+      const deleteDoc = async (docId) => {
+        if (!confirm("Are you sure you want to delete this document and its vector chunks?")) return;
+        try {
+          const res = await fetch(`${API_BASE}/api/documents/${docId}`, { method: 'DELETE' });
+          if (res.ok) {
+            showToast("Document deleted", "success");
+            loadDocuments();
+            setSelectedDocChunks(null);
+          }
+        } catch (e) {
+          showToast("Failed to delete", "error");
+        }
+      };
+
+      const inspectChunks = async (docId) => {
+        try {
+          const res = await fetch(`${API_BASE}/api/documents/${docId}/chunks`);
+          if (res.ok) {
+            const chunks = await res.json();
+            setSelectedDocChunks(chunks);
+          }
+        } catch (e) {
+          showToast("Failed to load chunks", "error");
+        }
+      };
+
+      const submitFeedback = async (msgId, rating) => {
+        try {
+          const res = await fetch(`${API_BASE}/api/analytics/feedback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              message_id: msgId,
+              rating: rating,
+              comment: feedbackComment
+            })
+          });
+          if (res.ok) {
+            showToast("Thank you for your feedback!", "success");
+            setFeedbackTarget(null);
+            setFeedbackComment('');
+            loadAnalytics();
+          }
+        } catch (e) {
+          showToast("Failed to submit feedback", "error");
+        }
+      };
+
+      const generateQuiz = async () => {
+        setIsGeneratingStudy(true);
+        try {
+          const res = await fetch(`${API_BASE}/api/study/quiz`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ topic: studyTopic, num_questions: 4 })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setQuizData(data);
+            setQuizAnswers({});
+            setQuizSubmitted(false);
+          }
+        } catch (e) {
+          showToast("Failed to generate quiz", "error");
+        } finally {
+          setIsGeneratingStudy(false);
+        }
+      };
+
+      const generateCards = async () => {
+        setIsGeneratingStudy(true);
+        try {
+          const res = await fetch(`${API_BASE}/api/study/flashcards`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ topic: studyTopic })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setFlashcards(data);
+            setFlippedCards({});
+          }
+        } catch (e) {
+          showToast("Failed to generate flashcards", "error");
+        } finally {
+          setIsGeneratingStudy(false);
+        }
+      };
+
+      const speakText = (text) => {
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+          const cleanText = text.replace(/[*_#>`]/g, '');
+          const utterance = new SpeechSynthesisUtterance(cleanText);
+          window.speechSynthesis.speak(utterance);
+          showToast("Speaking answer aloud...", "info");
+        } else {
+          showToast("Speech synthesis not supported in this browser", "error");
+        }
+      };
+
+      return (
+        <div class="flex flex-col h-screen">
+          {/* Top Navigation Bar */}
+          <header class="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between shrink-0 shadow-sm z-20">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-400 flex items-center justify-center text-white font-bold text-lg shadow-md shadow-indigo-100">
+                UM
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <h1 class="text-lg font-bold text-slate-800 tracking-tight">UniMate AI</h1>
+                  <span class="px-2 py-0.5 text-xs font-semibold bg-indigo-50 text-indigo-600 rounded-full border border-indigo-100">
+                    RAG Grounded
+                  </span>
+                </div>
+                <p class="text-xs text-slate-400">Intelligent University Assistant & Official Knowledge Engine</p>
+              </div>
+            </div>
+
+            {/* Navigation Tabs */}
+            <nav class="flex items-center bg-slate-100 p-1 rounded-xl">
+              <button
+                onClick={() => setCurrentTab('chat')}
+                class={`flex items-center gap-2 px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                  currentTab === 'chat' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <i data-lucide="message-square" class="w-3.5 h-3.5"></i>
+                AI Chat
+              </button>
+              <button
+                onClick={() => setCurrentTab('dashboard')}
+                class={`flex items-center gap-2 px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                  currentTab === 'dashboard' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <i data-lucide="layout-dashboard" class="w-3.5 h-3.5"></i>
+                Dashboard
+              </button>
+              <button
+                onClick={() => { setCurrentTab('notices'); loadNotices(); }}
+                class={`flex items-center gap-2 px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                  currentTab === 'notices' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <i data-lucide="bell" class="w-3.5 h-3.5"></i>
+                Notices ({notices.length})
+              </button>
+              <button
+                onClick={() => setCurrentTab('study')}
+                class={`flex items-center gap-2 px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                  currentTab === 'study' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <i data-lucide="book-open" class="w-3.5 h-3.5"></i>
+                Study Assistant
+              </button>
+              <button
+                onClick={() => { setCurrentTab('admin'); loadDocuments(); loadAnalytics(); }}
+                class={`flex items-center gap-2 px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                  currentTab === 'admin' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <i data-lucide="shield" class="w-3.5 h-3.5"></i>
+                Admin Portal
+              </button>
+            </nav>
+
+            {/* Role Switcher & User Profile */}
+            <div class="flex items-center gap-3">
+              <div class="flex items-center bg-slate-100 p-0.5 rounded-lg text-xs font-medium border border-slate-200">
+                <button
+                  onClick={() => setRole('student')}
+                  class={`px-2.5 py-1 rounded-md transition-all ${role === 'student' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500'}`}
+                >
+                  Student
+                </button>
+                <button
+                  onClick={() => { setRole('admin'); setCurrentTab('admin'); }}
+                  class={`px-2.5 py-1 rounded-md transition-all ${role === 'admin' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-500'}`}
+                >
+                  Admin
+                </button>
+              </div>
+
+              <div class="flex items-center gap-2 pl-2 border-l border-slate-200">
+                <div class="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-semibold flex items-center justify-center text-xs">
+                  {role === 'student' ? 'AS' : 'PM'}
+                </div>
+                <div class="hidden sm:block text-left text-xs">
+                  <p class="font-semibold text-slate-700 leading-tight">
+                    {role === 'student' ? 'Aarav Sharma' : 'Dr. Priya Mehta'}
+                  </p>
+                  <p class="text-slate-400 text-[10px] leading-tight">
+                    {role === 'student' ? 'B.Tech AI • Sem 4' : 'Registrar Admin'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          {/* Toast Notification */}
+          {toast && (
+            <div class={`fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-xl shadow-lg text-xs font-medium flex items-center gap-2 border transition-all ${
+              toast.type === 'error' ? 'bg-red-50 text-red-700 border-red-200' :
+              toast.type === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+              'bg-indigo-50 text-indigo-700 border-indigo-200'
+            }`}>
+              <i data-lucide={toast.type === 'error' ? 'alert-circle' : toast.type === 'success' ? 'check-circle' : 'info'} class="w-4 h-4"></i>
+              {toast.msg}
+            </div>
+          )}
+
+          {/* Main Content Area */}
+          <main class="flex-1 overflow-hidden relative flex">
+            {/* TAB: CHAT ASSISTANT */}
+            {currentTab === 'chat' && (
+              <div class="flex-1 flex overflow-hidden">
+                {/* Conversation Sidebar */}
+                <aside class="w-64 border-r border-slate-200 bg-white flex flex-col shrink-0">
+                  <div class="p-3 border-b border-slate-200">
+                    <button
+                      onClick={startNewConversation}
+                      class="w-full flex items-center justify-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all"
+                    >
+                      <i data-lucide="plus" class="w-4 h-4"></i>
+                      New Conversation
+                    </button>
+                  </div>
+
+                  <div class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
+                    <div class="px-2 py-1 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                      Recent Threads
+                    </div>
+                    {conversations.map(conv => (
+                      <div
+                        key={conv.id}
+                        onClick={() => selectConversation(conv.id)}
+                        class={`group flex items-center justify-between p-2.5 rounded-xl text-xs cursor-pointer transition-all ${
+                          activeConvId === conv.id ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div class="flex items-center gap-2 overflow-hidden">
+                          <i data-lucide="message-square" class="w-3.5 h-3.5 shrink-0 opacity-60"></i>
+                          <span class="truncate">{conv.title}</span>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            fetch(`${API_BASE}/api/chat/conversations/${conv.id}`, { method: 'DELETE' }).then(() => loadConversations());
+                          }}
+                          class="opacity-0 group-hover:opacity-100 p-1 hover:text-red-500 rounded transition-all"
+                        >
+                          <i data-lucide="trash-2" class="w-3 h-3"></i>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div class="p-3 border-t border-slate-200 text-xs text-slate-500 bg-slate-50">
+                    <div class="flex items-center justify-between">
+                      <span class="font-medium text-[11px]">Knowledge Base:</span>
+                      <span class="text-emerald-600 font-bold text-[11px]">Active</span>
+                    </div>
+                    <p class="text-[10px] text-slate-400 mt-0.5">{docStats ? `${docStats.total_documents} docs • ${docStats.total_chunks} chunks` : 'Loaded'}</p>
+                  </div>
+                </aside>
+
+                {/* Chat Stream Panel */}
+                <div class="flex-1 flex flex-col bg-slate-50 overflow-hidden">
+                  {/* Chat Messages */}
+                  <div class="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-4">
+                    {messages.length === 0 ? (
+                      <div class="h-full flex flex-col items-center justify-center text-center max-w-lg mx-auto py-12">
+                        <div class="w-16 h-16 rounded-2xl bg-indigo-100 text-indigo-600 flex items-center justify-center mb-4 shadow-sm">
+                          <i data-lucide="bot" class="w-8 h-8"></i>
+                        </div>
+                        <h2 class="text-xl font-bold text-slate-800">Ask UniMate AI</h2>
+                        <p class="text-xs text-slate-500 mt-1">
+                          Grounded in official university academic regulations, examination notices, fee schedules, and syllabus.
+                        </p>
+
+                        {/* Suggested Questions */}
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-6 w-full text-left">
+                          {[
+                            { label: "Attendance threshold?", q: "What is the minimum attendance required to appear in exams?" },
+                            { label: "Exam Form Deadline?", q: "What is the deadline for submitting the exam registration form?" },
+                            { label: "Hostel Fee Due Date?", q: "When is the monthly mess fee due according to hostel regulations?" },
+                            { label: "Hindi Question (हिंदी)", q: "परीक्षा में बैठने के लिए न्यूनतम उपस्थिति कितनी होनी चाहिए?" },
+                            { label: "Unsupported Policy?", q: "What is the policy for quantum teleportation in hostel rooms?" }
+                          ].map((item, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => handleSendMessage(item.q)}
+                              class="p-2.5 bg-white border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/50 rounded-xl text-xs text-slate-700 transition-all text-left shadow-xs flex items-center justify-between group"
+                            >
+                              <span>{item.label}</span>
+                              <i data-lucide="arrow-right" class="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600"></i>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      messages.map((msg, idx) => (
+                        <div
+                          key={msg.id || idx}
+                          class={`flex gap-3 max-w-3xl ${msg.role === 'user' ? 'ml-auto justify-end' : 'mr-auto justify-start'}`}
+                        >
+                          {msg.role === 'assistant' && (
+                            <div class="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 text-xs font-bold shadow-xs">
+                              UM
+                            </div>
+                          )}
+
+                          <div class="space-y-2">
+                            <div
+                              class={`p-4 rounded-2xl text-xs leading-relaxed shadow-xs ${
+                                msg.role === 'user'
+                                  ? 'bg-indigo-600 text-white rounded-tr-none'
+                                  : 'bg-white text-slate-800 border border-slate-200/80 rounded-tl-none'
+                              }`}
+                            >
+                              {/* Evidence Level Badge */}
+                              {msg.role === 'assistant' && (
+                                <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
+                                  <div class="flex items-center gap-1.5">
+                                    <span class={`px-2 py-0.5 rounded-md text-[10px] font-semibold flex items-center gap-1 ${
+                                      msg.evidence_level === 'strong' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                      msg.evidence_level === 'partial' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                                      'bg-slate-100 text-slate-600 border border-slate-200'
+                                    }`}>
+                                      <i data-lucide={msg.evidence_level === 'strong' ? 'shield-check' : 'alert-circle'} class="w-3 h-3"></i>
+                                      {msg.evidence_level === 'strong' ? 'Strong Evidence' :
+                                       msg.evidence_level === 'partial' ? 'Partial Evidence' : 'Insufficient Evidence'}
+                                    </span>
+                                  </div>
+
+                                  <div class="flex items-center gap-2">
+                                    <button
+                                      onClick={() => speakText(msg.content)}
+                                      title="Read Aloud"
+                                      class="text-slate-400 hover:text-indigo-600 transition-colors"
+                                    >
+                                      <i data-lucide="volume-2" class="w-3.5 h-3.5"></i>
+                                    </button>
+                                    <button
+                                      onClick={() => submitFeedback(msg.id, 1)}
+                                      title="Helpful Answer"
+                                      class="text-slate-400 hover:text-emerald-600 transition-colors"
+                                    >
+                                      <i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i>
+                                    </button>
+                                    <button
+                                      onClick={() => { setFeedbackTarget(msg.id); }}
+                                      title="Report or Incorrect"
+                                      class="text-slate-400 hover:text-red-500 transition-colors"
+                                    >
+                                      <i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i>
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+
+                              <div class="whitespace-pre-wrap">{msg.content}</div>
+
+                              {/* Source Citations */}
+                              {msg.citations && msg.citations.length > 0 && (
+                                <div class="mt-3 pt-2.5 border-t border-slate-100">
+                                  <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                                    <i data-lucide="bookmark" class="w-3 h-3 text-indigo-500"></i>
+                                    Verified Sources & Citations ({msg.citations.length})
+                                  </div>
+                                  <div class="flex flex-wrap gap-1.5">
+                                    {msg.citations.map((c, cIdx) => (
+                                      <button
+                                        key={cIdx}
+                                        onClick={() => setSelectedCitation(c)}
+                                        class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-200 border border-slate-200 rounded-lg text-[11px] text-slate-700 transition-all text-left"
+                                      >
+                                        <i data-lucide="file-text" class="w-3 h-3 text-indigo-600 shrink-0"></i>
+                                        <span class="font-medium truncate max-w-[150px]">{c.document_title}</span>
+                                        <span class="text-indigo-600 font-bold">p.{c.page_number}</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                            <div class={`text-[10px] text-slate-400 px-1 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
+                              {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          </div>
+
+                          {msg.role === 'user' && (
+                            <div class="w-8 h-8 rounded-xl bg-slate-200 text-slate-700 flex items-center justify-center shrink-0 text-xs font-bold">
+                              AS
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                    {isSending && (
+                      <div class="flex gap-3 max-w-3xl mr-auto justify-start items-center">
+                        <div class="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-xs font-bold animate-pulse">
+                          UM
+                        </div>
+                        <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-2 text-xs text-slate-500">
+                          <i data-lucide="loader" class="w-4 h-4 text-indigo-600 animate-spin"></i>
+                          <span>Searching university documents & synthesizing grounded response...</span>
+                        </div>
+                      </div>
+                    )}
+                    <div ref={chatEndRef} />
+                  </div>
+
+                  {/* Input Box */}
+                  <div class="p-4 bg-white border-t border-slate-200 shrink-0">
+                    <div class="max-w-4xl mx-auto space-y-2">
+                      <div class="flex items-center justify-between text-xs text-slate-500 px-1">
+                        <div class="flex items-center gap-2">
+                          <span class="text-[11px] font-medium text-slate-400">Language:</span>
+                          <button
+                            onClick={() => setLanguage('auto')}
+                            class={`px-2 py-0.5 rounded text-[11px] ${language === 'auto' ? 'bg-indigo-100 text-indigo-700 font-bold' : 'hover:bg-slate-100'}`}
+                          >
+                            Auto
+                          </button>
+                          <button
+                            onClick={() => setLanguage('en')}
+                            class={`px-2 py-0.5 rounded text-[11px] ${language === 'en' ? 'bg-indigo-100 text-indigo-700 font-bold' : 'hover:bg-slate-100'}`}
+                          >
+                            English
+                          </button>
+                          <button
+                            onClick={() => setLanguage('hi')}
+                            class={`px-2 py-0.5 rounded text-[11px] ${language === 'hi' ? 'bg-indigo-100 text-indigo-700 font-bold' : 'hover:bg-slate-100'}`}
+                          >
+                            हिंदी (Hindi)
+                          </button>
+                        </div>
+                        <span class="text-[11px] text-slate-400">Strict Grounding Enabled</span>
+                      </div>
+
+                      <form
+                        onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }}
+                        class="flex items-center gap-2 bg-slate-50 border border-slate-200 focus-within:border-indigo-500 focus-within:bg-white rounded-2xl p-1.5 transition-all shadow-xs"
+                      >
+                        <input
+                          type="text"
+                          value={inputQuery}
+                          onChange={(e) => setInputQuery(e.target.value)}
+                          placeholder="Ask a question about academic regulations, exams, notices or policies..."
+                          class="flex-1 bg-transparent px-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none"
+                          disabled={isSending}
+                        />
+                        <button
+                          type="submit"
+                          disabled={!inputQuery.trim() || isSending}
+                          class="w-8 h-8 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white flex items-center justify-center shrink-0 transition-all shadow-xs"
+                        >
+                          <i data-lucide="send" class="w-4 h-4"></i>
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: STUDENT DASHBOARD */}
+            {currentTab === 'dashboard' && (
+              <div class="flex-1 overflow-y-auto custom-scrollbar p-6 bg-slate-50">
+                <div class="max-w-5xl mx-auto space-y-6">
+                  {/* Welcome Hero */}
+                  <div class="bg-gradient-to-r from-indigo-700 via-indigo-600 to-indigo-800 rounded-3xl p-6 text-white shadow-lg relative overflow-hidden">
+                    <div class="relative z-10 max-w-xl">
+                      <span class="px-2.5 py-1 rounded-full bg-white/20 text-white text-[11px] font-semibold backdrop-blur-xs">
+                        Academic Year 2026-2027
+                      </span>
+                      <h2 class="text-2xl font-bold mt-2">Welcome back, Aarav!</h2>
+                      <p class="text-xs text-indigo-100 mt-1 leading-relaxed">
+                        UniMate AI has verified 3 official university policies, active exam circulars, and hostel regulations.
+                      </p>
+                      <div class="flex items-center gap-3 mt-4">
+                        <button
+                          onClick={() => setCurrentTab('chat')}
+                          class="px-4 py-2 bg-white text-indigo-600 rounded-xl text-xs font-bold shadow-sm hover:bg-indigo-50 transition-all flex items-center gap-2"
+                        >
+                          <i data-lucide="message-square" class="w-3.5 h-3.5"></i>
+                          Open AI Assistant
+                        </button>
+                        <button
+                          onClick={() => setCurrentTab('notices')}
+                          class="px-4 py-2 bg-indigo-500/40 text-white border border-white/20 rounded-xl text-xs font-medium hover:bg-indigo-500/60 transition-all flex items-center gap-2"
+                        >
+                          <i data-lucide="bell" class="w-3.5 h-3.5"></i>
+                          View Circulars
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Grid: Upcoming Deadlines & Recent Notices */}
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Academic Deadlines */}
+                    <div class="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs">
+                      <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center gap-2">
+                          <i data-lucide="calendar" class="w-4 h-4 text-indigo-600"></i>
+                          <h3 class="text-sm font-bold text-slate-800">Upcoming Academic Deadlines</h3>
+                        </div>
+                        <span class="text-xs text-indigo-600 font-semibold cursor-pointer" onClick={() => setCurrentTab('notices')}>
+                          View All
+                        </span>
+                      </div>
+
+                      <div class="space-y-3">
+                        {deadlines.length === 0 ? (
+                          <p class="text-xs text-slate-400 py-4 text-center">No upcoming deadlines logged.</p>
+                        ) : (
+                          deadlines.map(evt => (
+                            <div key={evt.id} class="p-3 bg-slate-50 hover:bg-indigo-50/50 rounded-xl border border-slate-100 flex items-center justify-between transition-all">
+                              <div>
+                                <p class="text-xs font-semibold text-slate-800">{evt.title}</p>
+                                <p class="text-[11px] text-slate-400 mt-0.5">Audience: {evt.audience}</p>
+                              </div>
+                              <div class="text-right shrink-0">
+                                <span class="px-2.5 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-[10px] font-bold">
+                                  {evt.event_date}
+                                </span>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Official Notices */}
+                    <div class="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs">
+                      <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center gap-2">
+                          <i data-lucide="bell" class="w-4 h-4 text-indigo-600"></i>
+                          <h3 class="text-sm font-bold text-slate-800">Official Notices & Circulars</h3>
+                        </div>
+                        <span class="text-xs text-indigo-600 font-semibold cursor-pointer" onClick={() => setCurrentTab('notices')}>
+                          Search
+                        </span>
+                      </div>
+
+                      <div class="space-y-3">
+                        {notices.slice(0, 3).map(not => (
+                          <div key={not.id} class="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1">
+                            <div class="flex items-center justify-between">
+                              <span class="text-xs font-bold text-slate-800">{not.title}</span>
+                              <span class="text-[10px] uppercase font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">
+                                {not.category}
+                              </span>
+                            </div>
+                            <p class="text-xs text-slate-600 line-clamp-2 leading-relaxed">{not.summary}</p>
+                            {not.deadline && (
+                              <p class="text-[11px] text-red-600 font-semibold pt-1">Deadline: {not.deadline}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Quick Knowledge Links */}
+                  <div class="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs">
+                    <h3 class="text-sm font-bold text-slate-800 mb-3">Quick Knowledge Base Reference</h3>
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                      {[
+                        { title: "Attendance Policy", desc: "Rule 4.1: Minimum 75% required", icon: "check-circle", tab: "chat", q: "What is the minimum attendance required?" },
+                        { title: "Grading Scheme", desc: "10-point scale (O to F)", icon: "award", tab: "chat", q: "Explain the grading scale and pass mark." },
+                        { title: "Revaluation Rules", desc: "14 days, Rs. 500 fee", icon: "refresh-cw", tab: "chat", q: "How can I apply for revaluation?" },
+                        { title: "Hostel Curfew", desc: "Gates lock at 9:30 PM", icon: "home", tab: "chat", q: "What are the hostel gate timings and night pass rules?" }
+                      ].map((item, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() => { setCurrentTab('chat'); handleSendMessage(item.q); }}
+                          class="p-3 rounded-xl border border-slate-100 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-200 cursor-pointer transition-all space-y-1"
+                        >
+                          <div class="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center mb-1">
+                            <i data-lucide={item.icon} class="w-3.5 h-3.5"></i>
+                          </div>
+                          <p class="font-bold text-slate-800">{item.title}</p>
+                          <p class="text-[11px] text-slate-500 leading-tight">{item.desc}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: NOTICES & CIRCULARS */}
+            {currentTab === 'notices' && (
+              <div class="flex-1 overflow-y-auto custom-scrollbar p-6 bg-slate-50">
+                <div class="max-w-5xl mx-auto space-y-6">
+                  {/* Header & Search */}
+                  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <h2 class="text-xl font-bold text-slate-800">Smart Notice & Circular Board</h2>
+                      <p class="text-xs text-slate-500">Official circulars parsed with automated deadline and department extraction.</p>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                      <div class="relative">
+                        <input
+                          type="text"
+                          value={noticeSearch}
+                          onChange={(e) => setNoticeSearch(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') loadNotices(); }}
+                          placeholder="Search notices..."
+                          class="pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500"
+                        />
+                        <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5"></i>
+                      </div>
+                      <button
+                        onClick={loadNotices}
+                        class="px-3 py-1.5 bg-indigo-600 text-white rounded-xl text-xs font-semibold hover:bg-indigo-700"
+                      >
+                        Filter
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Category Pills */}
+                  <div class="flex flex-wrap gap-2 text-xs">
+                    {['all', 'examination', 'fees', 'scholarship', 'admission', 'placement', 'events', 'general'].map(cat => (
+                      <button
+                        key={cat}
+                        onClick={() => { setNoticeFilter(cat); setTimeout(loadNotices, 50); }}
+                        class={`px-3 py-1 rounded-xl font-medium capitalize transition-all ${
+                          noticeFilter === cat ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Notices Cards List */}
+                  <div class="space-y-4">
+                    {notices.length === 0 ? (
+                      <div class="p-8 text-center bg-white rounded-2xl border border-slate-200">
+                        <i data-lucide="inbox" class="w-8 h-8 text-slate-300 mx-auto mb-2"></i>
+                        <p class="text-xs text-slate-500">No notices match your selected category or query.</p>
+                      </div>
+                    ) : (
+                      notices.map(notice => (
+                        <div key={notice.id} class="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-3">
+                          <div class="flex items-start justify-between gap-4">
+                            <div>
+                              <div class="flex items-center gap-2 mb-1">
+                                <span class="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[10px] font-bold uppercase tracking-wide">
+                                  {notice.category}
+                                </span>
+                                <span class="text-slate-400 text-xs">•</span>
+                                <span class="text-xs text-slate-400">{new Date(notice.published_at).toLocaleDateString()}</span>
+                              </div>
+                              <h3 class="text-sm font-bold text-slate-800">{notice.title}</h3>
+                            </div>
+
+                            {notice.deadline && (
+                              <div class="px-3 py-1 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs font-bold text-right shrink-0">
+                                <span class="text-[10px] uppercase block font-semibold">Deadline</span>
+                                {notice.deadline}
+                              </div>
+                            )}
+                          </div>
+
+                          <div class="p-3 bg-slate-50 rounded-xl text-xs text-slate-700 leading-relaxed">
+                            <span class="font-semibold block text-slate-800 mb-0.5">AI Summary:</span>
+                            {notice.summary}
+                          </div>
+
+                          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs pt-2 border-t border-slate-100">
+                            <div>
+                              <span class="text-[11px] text-slate-400 block">Affected Department:</span>
+                              <span class="font-medium text-slate-700">{notice.affected_dept || "All Departments"}</span>
+                            </div>
+                            <div>
+                              <span class="text-[11px] text-slate-400 block">Target Semester:</span>
+                              <span class="font-medium text-slate-700">{notice.affected_semester || "All Semesters"}</span>
+                            </div>
+                            <div>
+                              <span class="text-[11px] text-slate-400 block">Action Required:</span>
+                              <span class="font-medium text-indigo-600">{notice.action_required || "Verify details"}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: STUDY ASSISTANT */}
+            {currentTab === 'study' && (
+              <div class="flex-1 overflow-y-auto custom-scrollbar p-6 bg-slate-50">
+                <div class="max-w-4xl mx-auto space-y-6">
+                  <div>
+                    <h2 class="text-xl font-bold text-slate-800">AI Study Assistant & Exam Practice</h2>
+                    <p class="text-xs text-slate-500">Generate grounded multiple-choice questions, interactive quizzes, and flashcards from indexed course materials.</p>
+                  </div>
+
+                  {/* Topic Selector & Generator Controls */}
+                  <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-4">
+                    <div class="flex flex-col sm:flex-row gap-3">
+                      <input
+                        type="text"
+                        value={studyTopic}
+                        onChange={(e) => setStudyTopic(e.target.value)}
+                        placeholder="Enter course topic or document name (e.g. Academic Regulations, Attendance, Exam Rules)"
+                        class="flex-1 px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500"
+                      />
+                      <button
+                        onClick={generateQuiz}
+                        disabled={isGeneratingStudy}
+                        class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 shadow-xs transition-all shrink-0"
+                      >
+                        <i data-lucide="check-square" class="w-3.5 h-3.5"></i>
+                        {isGeneratingStudy ? 'Generating...' : 'Generate Practice MCQs'}
+                      </button>
+                      <button
+                        onClick={generateCards}
+                        disabled={isGeneratingStudy}
+                        class="px-4 py-2 bg-slate-800 hover:bg-slate-900 disabled:opacity-50 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 shadow-xs transition-all shrink-0"
+                      >
+                        <i data-lucide="layers" class="w-3.5 h-3.5"></i>
+                        Generate Flashcards
+                      </button>
+                    </div>
+
+                    <div class="p-2.5 bg-amber-50/70 border border-amber-200/60 rounded-xl flex items-center gap-2 text-[11px] text-amber-800">
+                      <i data-lucide="info" class="w-4 h-4 text-amber-600 shrink-0"></i>
+                      <span>
+                        <strong>Academic Practice Disclaimer:</strong> All quiz items and flashcards are synthesized for self-study and revision, not official examination question papers.
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Interactive Quiz Mode */}
+                  {quizData && (
+                    <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-6">
+                      <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                        <div>
+                          <h3 class="text-base font-bold text-slate-800">Topic Quiz: {quizData.topic}</h3>
+                          <p class="text-xs text-slate-400">Source: {quizData.document_title}</p>
+                        </div>
+                        {quizSubmitted && (
+                          <div class="px-3 py-1 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-xl text-xs font-bold">
+                            Score: {Object.entries(quizAnswers).filter(([idx, ans]) => ans === quizData.questions[idx]?.correct_option_index).length} / {quizData.questions.length}
+                          </div>
+                        )}
+                      </div>
+
+                      <div class="space-y-6">
+                        {quizData.questions.map((q, qIdx) => (
+                          <div key={q.id || qIdx} class="p-4 rounded-xl border border-slate-100 bg-slate-50 space-y-3">
+                            <p class="text-xs font-bold text-slate-800">
+                              Question {qIdx + 1}: {q.question}
+                            </p>
+
+                            <div class="space-y-2">
+                              {q.options.map((opt, optIdx) => {
+                                const isSelected = quizAnswers[qIdx] === optIdx;
+                                const isCorrect = q.correct_option_index === optIdx;
+
+                                let optClass = "border-slate-200 bg-white text-slate-700 hover:border-indigo-300";
+                                if (quizSubmitted) {
+                                  if (isCorrect) optClass = "border-emerald-500 bg-emerald-50 text-emerald-800 font-semibold";
+                                  else if (isSelected) optClass = "border-red-400 bg-red-50 text-red-700";
+                                } else if (isSelected) {
+                                  optClass = "border-indigo-600 bg-indigo-50/50 text-indigo-700 font-semibold";
+                                }
+
+                                return (
+                                  <button
+                                    key={optIdx}
+                                    disabled={quizSubmitted}
+                                    onClick={() => setQuizAnswers({ ...quizAnswers, [qIdx]: optIdx })}
+                                    class={`w-full text-left p-2.5 rounded-xl border text-xs flex items-center gap-2 transition-all ${optClass}`}
+                                  >
+                                    <span class="w-5 h-5 rounded-md bg-slate-100 text-slate-600 flex items-center justify-center text-[10px] font-bold shrink-0">
+                                      {String.fromCharCode(65 + optIdx)}
+                                    </span>
+                                    <span>{opt}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {quizSubmitted && (
+                              <div class="p-3 bg-white rounded-xl border border-slate-200 text-xs text-slate-600 leading-relaxed mt-2">
+                                <span class="font-bold text-indigo-700 block mb-0.5">Explanation & Source Proof:</span>
+                                {q.explanation}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      {!quizSubmitted && (
+                        <button
+                          onClick={() => setQuizSubmitted(true)}
+                          class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all"
+                        >
+                          Submit Quiz & Check Answers
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Flashcards View */}
+                  {flashcards && (
+                    <div class="space-y-4">
+                      <h3 class="text-base font-bold text-slate-800">Flashcards ({flashcards.flashcards.length})</h3>
+                      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {flashcards.flashcards.map(card => {
+                          const isFlipped = flippedCards[card.id];
+                          return (
+                            <div
+                              key={card.id}
+                              onClick={() => setFlippedCards({ ...flippedCards, [card.id]: !isFlipped })}
+                              class={`p-5 rounded-2xl border cursor-pointer transition-all min-h-[160px] flex flex-col justify-between shadow-xs ${
+                                isFlipped
+                                  ? 'bg-indigo-600 text-white border-indigo-700'
+                                  : 'bg-white text-slate-800 border-slate-200 hover:border-indigo-300'
+                              }`}
+                            >
+                              <div class="flex items-center justify-between text-[10px] uppercase font-bold tracking-wider opacity-70">
+                                <span>{isFlipped ? 'Answer & Explanation' : 'Concept / Question'}</span>
+                                <i data-lucide="repeat" class="w-3.5 h-3.5"></i>
+                              </div>
+                              <p class="text-xs font-medium my-3 leading-relaxed">
+                                {isFlipped ? card.back : card.front}
+                              </p>
+                              <div class="text-[10px] opacity-60 text-right">
+                                Click to flip
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* TAB: ADMIN DASHBOARD */}
+            {currentTab === 'admin' && (
+              <div class="flex-1 overflow-y-auto custom-scrollbar p-6 bg-slate-50">
+                <div class="max-w-5xl mx-auto space-y-6">
+                  {/* Admin Header */}
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <h2 class="text-xl font-bold text-slate-800">University Administrator Dashboard</h2>
+                      <p class="text-xs text-slate-500">Document management, vector ingestion engine status, and analytics.</p>
+                    </div>
+                    <label class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold cursor-pointer shadow-sm flex items-center gap-2 transition-all">
+                      <i data-lucide="upload-cloud" class="w-4 h-4"></i>
+                      Upload Document (PDF/DOCX)
+                      <input type="file" accept=".pdf,.docx" onChange={handleFileUpload} class="hidden" />
+                    </label>
+                  </div>
+
+                  {/* Summary Metric Cards */}
+                  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    {[
+                      { label: "Indexed Documents", val: docStats?.total_documents || 0, icon: "file-text", color: "text-indigo-600" },
+                      { label: "Semantic Chunks", val: docStats?.total_chunks || 0, icon: "layers", color: "text-blue-600" },
+                      { label: "Total Inquiries", val: analytics?.total_queries || 0, icon: "message-circle", color: "text-emerald-600" },
+                      { label: "Student Satisfaction", val: `${analytics?.satisfaction_rate || 100}%`, icon: "smile", color: "text-amber-600" }
+                    ].map((m, idx) => (
+                      <div key={idx} class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-1">
+                        <div class="flex items-center justify-between">
+                          <span class="text-xs text-slate-400 font-medium">{m.label}</span>
+                          <i data-lucide={m.icon} class={`w-4 h-4 ${m.color}`}></i>
+                        </div>
+                        <p class="text-2xl font-bold text-slate-800">{m.val}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Document Management Table */}
+                  <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                    <div class="p-4 border-b border-slate-100 flex items-center justify-between">
+                      <h3 class="text-sm font-bold text-slate-800">Knowledge-Base Documents</h3>
+                      <button onClick={loadDocuments} class="text-xs text-indigo-600 hover:underline flex items-center gap-1">
+                        <i data-lucide="refresh-cw" class="w-3 h-3"></i> Refresh
+                      </button>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                      <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-50 text-slate-400 text-[11px] uppercase tracking-wider border-b border-slate-100">
+                          <tr>
+                            <th class="p-3 pl-4">Title / Filename</th>
+                            <th class="p-3">Category</th>
+                            <th class="p-3">Format</th>
+                            <th class="p-3">Pages</th>
+                            <th class="p-3">Chunks</th>
+                            <th class="p-3">Status</th>
+                            <th class="p-3 pr-4 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                          {documents.map(doc => (
+                            <tr key={doc.id} class="hover:bg-slate-50/60 transition-colors">
+                              <td class="p-3 pl-4">
+                                <p class="font-bold text-slate-800">{doc.title}</p>
+                                <p class="text-[11px] text-slate-400">{doc.filename}</p>
+                              </td>
+                              <td class="p-3">
+                                <span class="px-2 py-0.5 bg-slate-100 text-slate-600 rounded font-medium text-[10px] uppercase">
+                                  {doc.category}
+                                </span>
+                              </td>
+                              <td class="p-3 text-slate-500">{doc.file_type}</td>
+                              <td class="p-3 text-slate-700">{doc.page_count}</td>
+                              <td class="p-3 text-slate-700 font-semibold">{doc.chunk_count}</td>
+                              <td class="p-3">
+                                <span class={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  doc.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                  doc.status === 'processing' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                                  'bg-red-50 text-red-700 border border-red-200'
+                                }`}>
+                                  {doc.status}
+                                </span>
+                              </td>
+                              <td class="p-3 pr-4 text-right space-x-2">
+                                <button
+                                  onClick={() => inspectChunks(doc.id)}
+                                  class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-medium transition-all"
+                                >
+                                  Inspect Chunks
+                                </button>
+                                <button
+                                  onClick={() => deleteDoc(doc.id)}
+                                  class="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-[11px] font-medium transition-all"
+                                >
+                                  Delete
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Chunk Inspector Modal / Panel */}
+                  {selectedDocChunks && (
+                    <div class="bg-white rounded-2xl border border-indigo-200 shadow-md p-5 space-y-4">
+                      <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                        <div class="flex items-center gap-2">
+                          <i data-lucide="layers" class="w-4 h-4 text-indigo-600"></i>
+                          <h3 class="text-sm font-bold text-slate-800">
+                            Inspecting Extracted Chunks ({selectedDocChunks.length} chunks)
+                          </h3>
+                        </div>
+                        <button
+                          onClick={() => setSelectedDocChunks(null)}
+                          class="text-xs text-slate-400 hover:text-slate-600"
+                        >
+                          Close Inspector
+                        </button>
+                      </div>
+
+                      <div class="max-h-72 overflow-y-auto custom-scrollbar space-y-2">
+                        {selectedDocChunks.map(c => (
+                          <div key={c.id} class="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs space-y-1">
+                            <div class="flex items-center justify-between text-[11px] font-bold text-slate-500">
+                              <span class="text-indigo-600">{c.id}</span>
+                              <span>Page {c.page_number} • Chunk #{c.chunk_index}</span>
+                            </div>
+                            <p class="text-slate-700 whitespace-pre-wrap leading-relaxed">{c.text}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Usage Analytics: Unanswered & Low-Evidence Queries */}
+                  {analytics && analytics.unanswered_queries && (
+                    <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3">
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                          <i data-lucide="help-circle" class="w-4 h-4 text-amber-500"></i>
+                          <h3 class="text-sm font-bold text-slate-800">Unanswered / Low-Evidence Queries</h3>
+                        </div>
+                        <span class="text-xs text-slate-400">Identifies missing documents in Knowledge Base</span>
+                      </div>
+
+                      {analytics.unanswered_queries.length === 0 ? (
+                        <p class="text-xs text-slate-400 py-3 text-center">No unanswered queries detected.</p>
+                      ) : (
+                        <div class="space-y-2">
+                          {analytics.unanswered_queries.map((q, idx) => (
+                            <div key={idx} class="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs space-y-1">
+                              <p class="font-bold text-slate-800">"{q.query}"</p>
+                              <p class="text-[11px] text-slate-500 italic">Response: {q.response}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Citation Inspector Modal / Drawer */}
+            {selectedCitation && (
+              <div class="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+                <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+                  <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                    <div class="flex items-center gap-2">
+                      <i data-lucide="file-check" class="w-4 h-4 text-indigo-600"></i>
+                      <h4 class="text-sm font-bold text-slate-800">Verified Source Citation</h4>
+                    </div>
+                    <button
+                      onClick={() => setSelectedCitation(null)}
+                      class="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+                    >
+                      <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                  </div>
+
+                  <div class="space-y-3 text-xs">
+                    <div>
+                      <span class="text-slate-400 text-[11px] block">Document Title:</span>
+                      <p class="font-bold text-slate-800 text-sm">{selectedCitation.document_title}</p>
+                    </div>
+
+                    <div class="flex items-center gap-4">
+                      <div>
+                        <span class="text-slate-400 text-[11px] block">Page Number:</span>
+                        <p class="font-bold text-indigo-600 text-sm">Page {selectedCitation.page_number}</p>
+                      </div>
+                      <div>
+                        <span class="text-slate-400 text-[11px] block">Similarity Relevance:</span>
+                        <p class="font-bold text-emerald-600 text-sm">
+                          {selectedCitation.similarity_score ? `${(selectedCitation.similarity_score * 100).toFixed(1)}%` : 'Direct Match'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div>
+                      <span class="text-slate-400 text-[11px] block mb-1">Verifiable Evidence Excerpt:</span>
+                      <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-[11px] text-slate-700 leading-relaxed max-h-48 overflow-y-auto">
+                        "{selectedCitation.snippet}"
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => setSelectedCitation(null)}
+                    class="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all"
+                  >
+                    Close Inspector
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Feedback Modal */}
+            {feedbackTarget && (
+              <div class="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+                <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200 space-y-3">
+                  <h4 class="text-sm font-bold text-slate-800">Report Inaccuracy / Give Feedback</h4>
+                  <p class="text-xs text-slate-500">Help the university admin office verify and improve grounded answers.</p>
+                  <textarea
+                    value={feedbackComment}
+                    onChange={(e) => setFeedbackComment(e.target.value)}
+                    placeholder="Describe what was incorrect or missing..."
+                    class="w-full h-24 p-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500"
+                  />
+                  <div class="flex items-center justify-end gap-2 pt-2">
+                    <button
+                      onClick={() => setFeedbackTarget(null)}
+                      class="px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100 rounded-lg"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => submitFeedback(feedbackTarget, -1)}
+                      class="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg"
+                    >
+                      Submit Report
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </main>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
