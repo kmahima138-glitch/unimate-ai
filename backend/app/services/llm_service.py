@@ -24,11 +24,38 @@ class LLMService:
         devanagari_chars = len(re.findall(r"[\u0900-\u097F]", text))
         if devanagari_chars > 2:
             return "hi"
-        hindi_keywords = ["kya", "hai", "kaise", "kab", "kisko", "chahiye", "kitna", "pariksha", "niyam", "batao"]
+        hindi_keywords = ["kya", "hai", "kaise", "kab", "kisko", "chahiye", "kitna", "pariksha", "niyam", "batao", "namaste", "sakte"]
         tokens = text.lower().split()
         if sum(1 for k in hindi_keywords if k in tokens) >= 2:
             return "hi"
         return "en"
+
+    def get_assistant_introduction(self, user_name: str = "Mahima", lang: str = "en") -> str:
+        """Returns a helpful, friendly self-introduction explaining UniMate AI's capabilities."""
+        first_name = user_name.split()[0] if user_name else "there"
+        if lang == "hi":
+            return (
+                f"नमस्ते {first_name}! 👋 मैं **UniMate AI** हूँ—विश्वविद्यालय का आधिकारिक AI सहायक।\n\n"
+                f"मैं आपकी इन सभी शैक्षणिक और प्रशासनिक कार्यों में सहायता कर सकता हूँ:\n\n"
+                f"1. 📖 **विश्वविद्यालय नियम व नीतियां (Academic Policies)**: न्यूनतम उपस्थिति (75%), परीक्षा पात्रता, 10-पॉइंट ग्रेडिंग प्रणाली, पुनर्मूल्यांकन और पाठ्यक्रम से जुड़े सवालों के आधिकारिक उत्तर।\n"
+                f"2. 📢 **सूचनाएं व सर्कुलर (Notices & Circulars)**: नवीनतम परीक्षा व प्रशासनिक सूचनाएं पढ़ना और उनकी मुख्य समय सीमा (Deadlines) निकालना।\n"
+                f"3. 📅 **महत्वपूर्ण तिथियां व कैलेंडर (Deadlines Tracker)**: परीक्षा फॉर्म, शुल्क भुगतान और शैक्षणिक कैलेंडर की समय सीमा याद रखना।\n"
+                f"4. 🧠 **AI स्टडी असिस्टेंट (Study & Practice)**: आपके पाठ्यक्रम से अभ्यास हेतु MCQs, क्विज़ और पुनरावृत्ति फ़्लैशकार्ड्स बनाना।\n"
+                f"5. 📑 **सत्यापित स्रोत (Verified Citations)**: हर नियम के साथ आधिकारिक दस्तावेज़ और सटीक पृष्ठ संख्या का संदर्भ दिखाना।\n\n"
+                f"आप मुझसे अंग्रेज़ी या हिंदी में कोई भी प्रश्न पूछ सकते हैं! आज मैं आपकी क्या सहायता करूँ?"
+            )
+
+        return (
+            f"Hello {first_name}! 👋 I am **UniMate AI**, your intelligent university knowledge assistant.\n\n"
+            f"Here is everything I can do for you:\n\n"
+            f"1. 📖 **Answer Academic & Policy Questions**: Clarify attendance rules (minimum 75% requirement & medical condonation), examination eligibility, 10-point grading scales, and revaluation rules—strictly grounded in verified university regulations.\n"
+            f"2. 📢 **Track Notices & Circulars**: Summarize official university notifications and automatically extract critical deadlines (such as exam form dates).\n"
+            f"3. 📅 **Academic Deadlines & Events**: Keep track of upcoming deadlines, registration dates, and semester schedules.\n"
+            f"4. 🧠 **AI Study Assistant**: Generate practice multiple-choice questions (MCQs) with explanations, interactive quizzes, and study flashcards from your syllabus.\n"
+            f"5. 📑 **Transparent Verified Citations**: Every factual answer is backed by exact document titles and page numbers so you can cross-check official policies.\n"
+            f"6. 🌐 **Bilingual Support**: Ask questions comfortably in English or Hindi (हिंदी)!\n\n"
+            f"Feel free to ask a question or explore the **Dashboard**, **Notices**, and **Study Assistant** tabs above!"
+        )
 
     def generate_grounded_answer(
         self,

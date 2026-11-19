@@ -27,3 +27,16 @@ def test_rag_hindi_language_support():
     # Should include Hindi response and 75% or उपस्थिति
     assert "उपस्थिति" in res["content"] or "75%" in res["content"]
     assert len(res["citations"]) > 0
+
+def test_rag_greeting_and_capability_response():
+    query = "Hi what can you do"
+    res = rag_pipeline.run(query=query)
+    
+    assert res["role"] == "assistant"
+    assert res["evidence_level"] == "strong"
+    # Should introduce itself and list core capabilities
+    assert "UniMate AI" in res["content"]
+    assert "Academic" in res["content"] or "Policies" in res["content"]
+    assert "Notices" in res["content"] or "Deadlines" in res["content"]
+    # Must NOT return the missing evidence message
+    assert "do not have enough information" not in res["content"].lower()
