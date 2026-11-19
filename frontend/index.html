@@ -58,12 +58,49 @@
 
     const API_BASE = window.location.origin.includes(":8000") 
       ? window.location.origin 
-      : "http://localhost:8000";
+      : (window.location.origin.includes("onrender.com") ? window.location.origin : "http://localhost:8000");
+
+    const DEFAULT_STUDENT = {
+      id: 'usr_student_demo',
+      name: 'Mahima Kumari',
+      email: 'kmahima138@gmail.com',
+      role: 'student',
+      course: 'MCA',
+      semester: 3,
+      department: 'Computer Applications'
+    };
+
+    const DEFAULT_ADMIN = {
+      id: 'usr_admin_demo',
+      name: 'Dr. Priya Mehta (Admin)',
+      email: 'admin.academic@uni.edu',
+      role: 'admin',
+      department: 'Academic Registrar Office'
+    };
 
     function App() {
-      // Navigation & Role State
+      // Auth & Profile State
+      const [currentUser, setCurrentUser] = useState(() => {
+        try {
+          const saved = localStorage.getItem('unimate_user');
+          return saved ? JSON.parse(saved) : DEFAULT_STUDENT;
+        } catch (e) {
+          return DEFAULT_STUDENT;
+        }
+      });
+      const [role, setRole] = useState(currentUser.role || 'student');
+      const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+      const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
+      const [authEmail, setAuthEmail] = useState('');
+      const [authPassword, setAuthPassword] = useState('');
+      const [authRole, setAuthRole] = useState('student');
+      const [regName, setRegName] = useState('');
+      const [regEmail, setRegEmail] = useState('');
+      const [regCourse, setRegCourse] = useState('MCA');
+      const [regSemester, setRegSemester] = useState('3');
+
+      // Navigation & Tab State
       const [currentTab, setCurrentTab] = useState('chat'); // 'chat' | 'dashboard' | 'notices' | 'study' | 'admin'
-      const [role, setRole] = useState('student'); // 'student' | 'admin'
       const [toast, setToast] = useState(null);
 
       // Chat State
@@ -122,16 +159,90 @@
         if (window.lucide) {
           window.lucide.createIcons();
         }
-      }, [currentTab, messages, documents, notices, quizData, flashcards]);
+      }, [currentTab, messages, documents, notices, quizData, flashcards, isAuthModalOpen, role]);
 
       useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       }, [messages]);
 
+      // Authentication Handlers
+      const doLogin = async (userRole, userEmail = null, userPassword = null) => {
+        const targetEmail = userEmail || (userRole === 'admin' ? DEFAULT_ADMIN.email : DEFAULT_STUDENT.email);
+        try {
+          const res = await fetch(`${API_BASE}/api/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: targetEmail, role: userRole, password: userPassword || 'password' })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setCurrentUser(data.user);
+            setRole(data.user.role);
+            localStorage.setItem('unimate_user', JSON.stringify(data.user));
+            setIsAuthModalOpen(false);
+            showToast(`Logged in as ${data.user.name} (${data.user.role === 'admin' ? 'Admin' : `${data.user.course} Sem ${data.user.semester}`})`, 'success');
+          } else {
+            const profile = userRole === 'admin' ? DEFAULT_ADMIN : DEFAULT_STUDENT;
+            setCurrentUser(profile);
+            setRole(profile.role);
+            localStorage.setItem('unimate_user', JSON.stringify(profile));
+            setIsAuthModalOpen(false);
+            showToast(`Signed in as ${profile.name}`, 'success');
+          }
+        } catch (e) {
+          const profile = userRole === 'admin' ? DEFAULT_ADMIN : DEFAULT_STUDENT;
+          setCurrentUser(profile);
+          setRole(profile.role);
+          setIsAuthModalOpen(false);
+          showToast(`Signed in as ${profile.name}`, 'info');
+        }
+      };
+
+      const doRegister = async (e) => {
+        e.preventDefault();
+        if (!regName.trim() || !regEmail.trim()) {
+          showToast("Name and email are required", "error");
+          return;
+        }
+        try {
+          const res = await fetch(`${API_BASE}/api/auth/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: regName.trim(),
+              email: regEmail.trim(),
+              course: regCourse,
+              semester: parseInt(regSemester) || 3,
+              department: regCourse === 'MCA' ? 'Computer Applications' : 'Engineering',
+              role: 'student'
+            })
+          });
+          if (res.ok) {
+            const newUser = await res.json();
+            setCurrentUser(newUser);
+            setRole('student');
+            localStorage.setItem('unimate_user', JSON.stringify(newUser));
+            setIsAuthModalOpen(false);
+            showToast(`Account created for ${newUser.name}!`, 'success');
+          }
+        } catch (e) {
+          showToast("Registration failed", "error");
+        }
+      };
+
+      const switchRole = (newRole) => {
+        if (newRole === 'admin') {
+          doLogin('admin');
+          setCurrentTab('admin');
+        } else {
+          doLogin('student');
+        }
+      };
+
       // API calls
       const loadConversations = async () => {
         try {
-          const res = await fetch(`${API_BASE}/api/chat/conversations`);
+          const res = await fetch(`${API_BASE}/api/chat/conversations?user_id=${currentUser.id}`);
           const data = await res.json();
           setConversations(data);
           if (data.length > 0 && !activeConvId) {
@@ -160,7 +271,7 @@
           const res = await fetch(`${API_BASE}/api/chat/conversations`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: 'New Conversation', language: language })
+            body: JSON.stringify({ user_id: currentUser.id, title: 'New Conversation', language: language })
           });
           const newConv = await res.json();
           setConversations([newConv, ...conversations]);
@@ -221,7 +332,6 @@
         setInputQuery('');
         setIsSending(true);
 
-        // Optimistically show user message
         const optimisticUserMsg = {
           id: `temp_${Date.now()}`,
           role: 'user',
@@ -238,6 +348,7 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               conversation_id: activeConvId,
+              user_id: currentUser.id,
               message: query,
               language: language
             })
@@ -331,6 +442,7 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+              user_id: currentUser.id,
               message_id: msgId,
               rating: rating,
               comment: feedbackComment
@@ -415,7 +527,7 @@
                     RAG Grounded
                   </span>
                 </div>
-                <p class="text-xs text-slate-400">Intelligent University Assistant & Official Knowledge Engine</p>
+                <p class="text-xs text-slate-400">Intelligent University Assistant & Knowledge Engine</p>
               </div>
             </div>
 
@@ -472,29 +584,37 @@
             <div class="flex items-center gap-3">
               <div class="flex items-center bg-slate-100 p-0.5 rounded-lg text-xs font-medium border border-slate-200">
                 <button
-                  onClick={() => setRole('student')}
+                  onClick={() => switchRole('student')}
                   class={`px-2.5 py-1 rounded-md transition-all ${role === 'student' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500'}`}
                 >
                   Student
                 </button>
                 <button
-                  onClick={() => { setRole('admin'); setCurrentTab('admin'); }}
+                  onClick={() => switchRole('admin')}
                   class={`px-2.5 py-1 rounded-md transition-all ${role === 'admin' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-500'}`}
                 >
                   Admin
                 </button>
               </div>
 
-              <div class="flex items-center gap-2 pl-2 border-l border-slate-200">
-                <div class="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-semibold flex items-center justify-center text-xs">
-                  {role === 'student' ? 'AS' : 'PM'}
+              {/* Clickable Profile Card -> Opens Auth Modal */}
+              <div 
+                onClick={() => setIsAuthModalOpen(true)}
+                class="flex items-center gap-2 pl-2 border-l border-slate-200 cursor-pointer hover:bg-slate-50 p-1 rounded-xl transition-all"
+                title="Click to Switch Profile or Sign In"
+              >
+                <div class="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center text-xs">
+                  {currentUser.role === 'student' ? 'MK' : 'PM'}
                 </div>
                 <div class="hidden sm:block text-left text-xs">
-                  <p class="font-semibold text-slate-700 leading-tight">
-                    {role === 'student' ? 'Aarav Sharma' : 'Dr. Priya Mehta'}
-                  </p>
-                  <p class="text-slate-400 text-[10px] leading-tight">
-                    {role === 'student' ? 'B.Tech AI • Sem 4' : 'Registrar Admin'}
+                  <div class="flex items-center gap-1">
+                    <p class="font-bold text-slate-800 leading-tight">
+                      {currentUser.name}
+                    </p>
+                    <i data-lucide="chevron-down" class="w-3 h-3 text-slate-400"></i>
+                  </div>
+                  <p class="text-slate-500 text-[10px] leading-tight">
+                    {currentUser.role === 'student' ? `${currentUser.course || 'MCA'} • Sem ${currentUser.semester || 3}` : 'Registrar Admin'}
                   </p>
                 </div>
               </div>
@@ -577,7 +697,7 @@
                         <div class="w-16 h-16 rounded-2xl bg-indigo-100 text-indigo-600 flex items-center justify-center mb-4 shadow-sm">
                           <i data-lucide="bot" class="w-8 h-8"></i>
                         </div>
-                        <h2 class="text-xl font-bold text-slate-800">Ask UniMate AI</h2>
+                        <h2 class="text-xl font-bold text-slate-800">Hi {currentUser.name.split(' ')[0]}! Ask UniMate AI</h2>
                         <p class="text-xs text-slate-500 mt-1">
                           Grounded in official university academic regulations, examination notices, fee schedules, and syllabus.
                         </p>
@@ -695,7 +815,7 @@
 
                           {msg.role === 'user' && (
                             <div class="w-8 h-8 rounded-xl bg-slate-200 text-slate-700 flex items-center justify-center shrink-0 text-xs font-bold">
-                              AS
+                              {currentUser.role === 'student' ? 'MK' : 'PM'}
                             </div>
                           )}
                         </div>
@@ -777,11 +897,11 @@
                   <div class="bg-gradient-to-r from-indigo-700 via-indigo-600 to-indigo-800 rounded-3xl p-6 text-white shadow-lg relative overflow-hidden">
                     <div class="relative z-10 max-w-xl">
                       <span class="px-2.5 py-1 rounded-full bg-white/20 text-white text-[11px] font-semibold backdrop-blur-xs">
-                        Academic Year 2026-2027
+                        {currentUser.course ? `${currentUser.course} Semester ${currentUser.semester}` : 'Academic Year 2026-2027'}
                       </span>
-                      <h2 class="text-2xl font-bold mt-2">Welcome back, Aarav!</h2>
+                      <h2 class="text-2xl font-bold mt-2">Welcome back, {currentUser.name.split(' ')[0]}!</h2>
                       <p class="text-xs text-indigo-100 mt-1 leading-relaxed">
-                        UniMate AI has verified 3 official university policies, active exam circulars, and hostel regulations.
+                        UniMate AI has verified official university regulations, active exam circulars, and hostel policies for your semester.
                       </p>
                       <div class="flex items-center gap-3 mt-4">
                         <button
@@ -1156,165 +1276,200 @@
 
             {/* TAB: ADMIN DASHBOARD */}
             {currentTab === 'admin' && (
-              <div class="flex-1 overflow-y-auto custom-scrollbar p-6 bg-slate-50">
-                <div class="max-w-5xl mx-auto space-y-6">
-                  {/* Admin Header */}
-                  <div class="flex items-center justify-between">
-                    <div>
-                      <h2 class="text-xl font-bold text-slate-800">University Administrator Dashboard</h2>
-                      <p class="text-xs text-slate-500">Document management, vector ingestion engine status, and analytics.</p>
+              role !== 'admin' ? (
+                <div class="flex-1 flex items-center justify-center p-6 bg-slate-50">
+                  <div class="bg-white rounded-3xl p-8 max-w-md w-full text-center border border-slate-200 shadow-lg space-y-4">
+                    <div class="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto shadow-xs">
+                      <i data-lucide="lock" class="w-7 h-7"></i>
                     </div>
-                    <label class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold cursor-pointer shadow-sm flex items-center gap-2 transition-all">
-                      <i data-lucide="upload-cloud" class="w-4 h-4"></i>
-                      Upload Document (PDF/DOCX)
-                      <input type="file" accept=".pdf,.docx" onChange={handleFileUpload} class="hidden" />
-                    </label>
-                  </div>
-
-                  {/* Summary Metric Cards */}
-                  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                    {[
-                      { label: "Indexed Documents", val: docStats?.total_documents || 0, icon: "file-text", color: "text-indigo-600" },
-                      { label: "Semantic Chunks", val: docStats?.total_chunks || 0, icon: "layers", color: "text-blue-600" },
-                      { label: "Total Inquiries", val: analytics?.total_queries || 0, icon: "message-circle", color: "text-emerald-600" },
-                      { label: "Student Satisfaction", val: `${analytics?.satisfaction_rate || 100}%`, icon: "smile", color: "text-amber-600" }
-                    ].map((m, idx) => (
-                      <div key={idx} class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-1">
-                        <div class="flex items-center justify-between">
-                          <span class="text-xs text-slate-400 font-medium">{m.label}</span>
-                          <i data-lucide={m.icon} class={`w-4 h-4 ${m.color}`}></i>
-                        </div>
-                        <p class="text-2xl font-bold text-slate-800">{m.val}</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Document Management Table */}
-                  <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-                    <div class="p-4 border-b border-slate-100 flex items-center justify-between">
-                      <h3 class="text-sm font-bold text-slate-800">Knowledge-Base Documents</h3>
-                      <button onClick={loadDocuments} class="text-xs text-indigo-600 hover:underline flex items-center gap-1">
-                        <i data-lucide="refresh-cw" class="w-3 h-3"></i> Refresh
+                    <h3 class="text-lg font-bold text-slate-800">Administrator Access Required</h3>
+                    <p class="text-xs text-slate-500 leading-relaxed">
+                      The Administrator Dashboard is protected and restricted to university registrar staff and faculty. 
+                      Please sign in with your administrative account to manage documents, view chunk vectors, and inspect usage analytics.
+                    </p>
+                    <div class="pt-2 flex flex-col gap-2">
+                      <button
+                        onClick={() => { setIsAuthModalOpen(true); setAuthMode('login'); setAuthRole('admin'); }}
+                        class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2"
+                      >
+                        <i data-lucide="shield" class="w-4 h-4"></i>
+                        Log In as Administrator
+                      </button>
+                      <button
+                        onClick={() => setCurrentTab('chat')}
+                        class="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold transition-all"
+                      >
+                        Back to Student Chat
                       </button>
                     </div>
-
-                    <div class="overflow-x-auto">
-                      <table class="w-full text-left text-xs">
-                        <thead class="bg-slate-50 text-slate-400 text-[11px] uppercase tracking-wider border-b border-slate-100">
-                          <tr>
-                            <th class="p-3 pl-4">Title / Filename</th>
-                            <th class="p-3">Category</th>
-                            <th class="p-3">Format</th>
-                            <th class="p-3">Pages</th>
-                            <th class="p-3">Chunks</th>
-                            <th class="p-3">Status</th>
-                            <th class="p-3 pr-4 text-right">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-100">
-                          {documents.map(doc => (
-                            <tr key={doc.id} class="hover:bg-slate-50/60 transition-colors">
-                              <td class="p-3 pl-4">
-                                <p class="font-bold text-slate-800">{doc.title}</p>
-                                <p class="text-[11px] text-slate-400">{doc.filename}</p>
-                              </td>
-                              <td class="p-3">
-                                <span class="px-2 py-0.5 bg-slate-100 text-slate-600 rounded font-medium text-[10px] uppercase">
-                                  {doc.category}
-                                </span>
-                              </td>
-                              <td class="p-3 text-slate-500">{doc.file_type}</td>
-                              <td class="p-3 text-slate-700">{doc.page_count}</td>
-                              <td class="p-3 text-slate-700 font-semibold">{doc.chunk_count}</td>
-                              <td class="p-3">
-                                <span class={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                  doc.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                                  doc.status === 'processing' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
-                                  'bg-red-50 text-red-700 border border-red-200'
-                                }`}>
-                                  {doc.status}
-                                </span>
-                              </td>
-                              <td class="p-3 pr-4 text-right space-x-2">
-                                <button
-                                  onClick={() => inspectChunks(doc.id)}
-                                  class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-medium transition-all"
-                                >
-                                  Inspect Chunks
-                                </button>
-                                <button
-                                  onClick={() => deleteDoc(doc.id)}
-                                  class="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-[11px] font-medium transition-all"
-                                >
-                                  Delete
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
                   </div>
-
-                  {/* Chunk Inspector Modal / Panel */}
-                  {selectedDocChunks && (
-                    <div class="bg-white rounded-2xl border border-indigo-200 shadow-md p-5 space-y-4">
-                      <div class="flex items-center justify-between pb-3 border-b border-slate-100">
-                        <div class="flex items-center gap-2">
-                          <i data-lucide="layers" class="w-4 h-4 text-indigo-600"></i>
-                          <h3 class="text-sm font-bold text-slate-800">
-                            Inspecting Extracted Chunks ({selectedDocChunks.length} chunks)
-                          </h3>
+                </div>
+              ) : (
+                <div class="flex-1 overflow-y-auto custom-scrollbar p-6 bg-slate-50">
+                  <div class="max-w-5xl mx-auto space-y-6">
+                    {/* Admin Header */}
+                    <div class="flex items-center justify-between">
+                      <div>
+                        <div class="flex items-center gap-2 mb-1">
+                          <span class="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded">
+                            Logged in as Administrator
+                          </span>
                         </div>
-                        <button
-                          onClick={() => setSelectedDocChunks(null)}
-                          class="text-xs text-slate-400 hover:text-slate-600"
-                        >
-                          Close Inspector
+                        <h2 class="text-xl font-bold text-slate-800">University Administrator Dashboard</h2>
+                        <p class="text-xs text-slate-500">Document management, vector ingestion engine status, and analytics.</p>
+                      </div>
+                      <label class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold cursor-pointer shadow-sm flex items-center gap-2 transition-all">
+                        <i data-lucide="upload-cloud" class="w-4 h-4"></i>
+                        Upload Document (PDF/DOCX)
+                        <input type="file" accept=".pdf,.docx" onChange={handleFileUpload} class="hidden" />
+                      </label>
+                    </div>
+
+                    {/* Summary Metric Cards */}
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                      {[
+                        { label: "Indexed Documents", val: docStats?.total_documents || 0, icon: "file-text", color: "text-indigo-600" },
+                        { label: "Semantic Chunks", val: docStats?.total_chunks || 0, icon: "layers", color: "text-blue-600" },
+                        { label: "Total Inquiries", val: analytics?.total_queries || 0, icon: "message-circle", color: "text-emerald-600" },
+                        { label: "Student Satisfaction", val: `${analytics?.satisfaction_rate || 100}%`, icon: "smile", color: "text-amber-600" }
+                      ].map((m, idx) => (
+                        <div key={idx} class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-1">
+                          <div class="flex items-center justify-between">
+                            <span class="text-xs text-slate-400 font-medium">{m.label}</span>
+                            <i data-lucide={m.icon} class={`w-4 h-4 ${m.color}`}></i>
+                          </div>
+                          <p class="text-2xl font-bold text-slate-800">{m.val}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Document Management Table */}
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                      <div class="p-4 border-b border-slate-100 flex items-center justify-between">
+                        <h3 class="text-sm font-bold text-slate-800">Knowledge-Base Documents</h3>
+                        <button onClick={loadDocuments} class="text-xs text-indigo-600 hover:underline flex items-center gap-1">
+                          <i data-lucide="refresh-cw" class="w-3 h-3"></i> Refresh
                         </button>
                       </div>
 
-                      <div class="max-h-72 overflow-y-auto custom-scrollbar space-y-2">
-                        {selectedDocChunks.map(c => (
-                          <div key={c.id} class="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs space-y-1">
-                            <div class="flex items-center justify-between text-[11px] font-bold text-slate-500">
-                              <span class="text-indigo-600">{c.id}</span>
-                              <span>Page {c.page_number} • Chunk #{c.chunk_index}</span>
-                            </div>
-                            <p class="text-slate-700 whitespace-pre-wrap leading-relaxed">{c.text}</p>
-                          </div>
-                        ))}
+                      <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs">
+                          <thead class="bg-slate-50 text-slate-400 text-[11px] uppercase tracking-wider border-b border-slate-100">
+                            <tr>
+                              <th class="p-3 pl-4">Title / Filename</th>
+                              <th class="p-3">Category</th>
+                              <th class="p-3">Format</th>
+                              <th class="p-3">Pages</th>
+                              <th class="p-3">Chunks</th>
+                              <th class="p-3">Status</th>
+                              <th class="p-3 pr-4 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody class="divide-y divide-slate-100">
+                            {documents.map(doc => (
+                              <tr key={doc.id} class="hover:bg-slate-50/60 transition-colors">
+                                <td class="p-3 pl-4">
+                                  <p class="font-bold text-slate-800">{doc.title}</p>
+                                  <p class="text-[11px] text-slate-400">{doc.filename}</p>
+                                </td>
+                                <td class="p-3">
+                                  <span class="px-2 py-0.5 bg-slate-100 text-slate-600 rounded font-medium text-[10px] uppercase">
+                                    {doc.category}
+                                  </span>
+                                </td>
+                                <td class="p-3 text-slate-500">{doc.file_type}</td>
+                                <td class="p-3 text-slate-700">{doc.page_count}</td>
+                                <td class="p-3 text-slate-700 font-semibold">{doc.chunk_count}</td>
+                                <td class="p-3">
+                                  <span class={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                    doc.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                    doc.status === 'processing' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                                    'bg-red-50 text-red-700 border border-red-200'
+                                  }`}>
+                                    {doc.status}
+                                  </span>
+                                </td>
+                                <td class="p-3 pr-4 text-right space-x-2">
+                                  <button
+                                    onClick={() => inspectChunks(doc.id)}
+                                    class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-medium transition-all"
+                                  >
+                                    Inspect Chunks
+                                  </button>
+                                  <button
+                                    onClick={() => deleteDoc(doc.id)}
+                                    class="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-[11px] font-medium transition-all"
+                                  >
+                                    Delete
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
                     </div>
-                  )}
 
-                  {/* Usage Analytics: Unanswered & Low-Evidence Queries */}
-                  {analytics && analytics.unanswered_queries && (
-                    <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3">
-                      <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-2">
-                          <i data-lucide="help-circle" class="w-4 h-4 text-amber-500"></i>
-                          <h3 class="text-sm font-bold text-slate-800">Unanswered / Low-Evidence Queries</h3>
+                    {/* Chunk Inspector Modal / Panel */}
+                    {selectedDocChunks && (
+                      <div class="bg-white rounded-2xl border border-indigo-200 shadow-md p-5 space-y-4">
+                        <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                          <div class="flex items-center gap-2">
+                            <i data-lucide="layers" class="w-4 h-4 text-indigo-600"></i>
+                            <h3 class="text-sm font-bold text-slate-800">
+                              Inspecting Extracted Chunks ({selectedDocChunks.length} chunks)
+                            </h3>
+                          </div>
+                          <button
+                            onClick={() => setSelectedDocChunks(null)}
+                            class="text-xs text-slate-400 hover:text-slate-600"
+                          >
+                            Close Inspector
+                          </button>
                         </div>
-                        <span class="text-xs text-slate-400">Identifies missing documents in Knowledge Base</span>
-                      </div>
 
-                      {analytics.unanswered_queries.length === 0 ? (
-                        <p class="text-xs text-slate-400 py-3 text-center">No unanswered queries detected.</p>
-                      ) : (
-                        <div class="space-y-2">
-                          {analytics.unanswered_queries.map((q, idx) => (
-                            <div key={idx} class="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs space-y-1">
-                              <p class="font-bold text-slate-800">"{q.query}"</p>
-                              <p class="text-[11px] text-slate-500 italic">Response: {q.response}</p>
+                        <div class="max-h-72 overflow-y-auto custom-scrollbar space-y-2">
+                          {selectedDocChunks.map(c => (
+                            <div key={c.id} class="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs space-y-1">
+                              <div class="flex items-center justify-between text-[11px] font-bold text-slate-500">
+                                <span class="text-indigo-600">{c.id}</span>
+                                <span>Page {c.page_number} • Chunk #{c.chunk_index}</span>
+                              </div>
+                              <p class="text-slate-700 whitespace-pre-wrap leading-relaxed">{c.text}</p>
                             </div>
                           ))}
                         </div>
-                      )}
-                    </div>
-                  )}
+                      </div>
+                    )}
+
+                    {/* Usage Analytics: Unanswered & Low-Evidence Queries */}
+                    {analytics && analytics.unanswered_queries && (
+                      <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3">
+                        <div class="flex items-center justify-between">
+                          <div class="flex items-center gap-2">
+                            <i data-lucide="help-circle" class="w-4 h-4 text-amber-500"></i>
+                            <h3 class="text-sm font-bold text-slate-800">Unanswered / Low-Evidence Queries</h3>
+                          </div>
+                          <span class="text-xs text-slate-400">Identifies missing documents in Knowledge Base</span>
+                        </div>
+
+                        {analytics.unanswered_queries.length === 0 ? (
+                          <p class="text-xs text-slate-400 py-3 text-center">No unanswered queries detected.</p>
+                        ) : (
+                          <div class="space-y-2">
+                            {analytics.unanswered_queries.map((q, idx) => (
+                              <div key={idx} class="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs space-y-1">
+                                <p class="font-bold text-slate-800">"{q.query}"</p>
+                                <p class="text-[11px] text-slate-500 italic">Response: {q.response}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )
             )}
 
             {/* Citation Inspector Modal / Drawer */}
@@ -1367,6 +1522,186 @@
                   >
                     Close Inspector
                   </button>
+                </div>
+              </div>
+            )}
+
+            {/* Login & Role Authentication Modal */}
+            {isAuthModalOpen && (
+              <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+                <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-5">
+                  <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                    <div class="flex items-center gap-2.5">
+                      <div class="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold">
+                        <i data-lucide="user-check" class="w-5 h-5"></i>
+                      </div>
+                      <div>
+                        <h4 class="text-sm font-bold text-slate-800">Account & Role Authentication</h4>
+                        <p class="text-[11px] text-slate-400">Student & Administrator Access</p>
+                      </div>
+                    </div>
+                    <button onClick={() => setIsAuthModalOpen(false)} class="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+                      <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                  </div>
+
+                  {/* Tabs: Sign In / Register */}
+                  <div class="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-medium">
+                    <button
+                      onClick={() => setAuthMode('login')}
+                      class={`flex-1 py-1.5 rounded-lg transition-all ${authMode === 'login' ? 'bg-white text-indigo-600 font-bold shadow-xs' : 'text-slate-500'}`}
+                    >
+                      Sign In
+                    </button>
+                    <button
+                      onClick={() => setAuthMode('register')}
+                      class={`flex-1 py-1.5 rounded-lg transition-all ${authMode === 'register' ? 'bg-white text-indigo-600 font-bold shadow-xs' : 'text-slate-500'}`}
+                    >
+                      Register New Student
+                    </button>
+                  </div>
+
+                  {authMode === 'login' ? (
+                    <div class="space-y-4 text-xs">
+                      {/* One-Click Quick Profiles */}
+                      <div class="space-y-2">
+                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">One-Click Quick Login</span>
+                        
+                        {/* Mahima Kumari */}
+                        <button
+                          onClick={() => doLogin('student', DEFAULT_STUDENT.email)}
+                          class="w-full p-3 rounded-2xl border border-indigo-200 bg-indigo-50/50 hover:bg-indigo-100/70 text-left flex items-center justify-between transition-all group shadow-xs"
+                        >
+                          <div class="flex items-center gap-2.5">
+                            <div class="w-9 h-9 rounded-xl bg-indigo-600 text-white font-bold flex items-center justify-center text-xs shadow-xs">
+                              MK
+                            </div>
+                            <div>
+                              <p class="font-bold text-indigo-900 text-xs">Mahima Kumari</p>
+                              <p class="text-[10px] text-indigo-600 font-medium">Student • MCA 3rd Sem (kmahima138@gmail.com)</p>
+                            </div>
+                          </div>
+                          <span class="text-[11px] font-bold text-indigo-600 group-hover:translate-x-0.5 transition-transform">Log In →</span>
+                        </button>
+
+                        {/* Dr. Priya Mehta (Admin) */}
+                        <button
+                          onClick={() => doLogin('admin', DEFAULT_ADMIN.email)}
+                          class="w-full p-3 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-left flex items-center justify-between transition-all group shadow-xs"
+                        >
+                          <div class="flex items-center gap-2.5">
+                            <div class="w-9 h-9 rounded-xl bg-slate-800 text-white font-bold flex items-center justify-center text-xs shadow-xs">
+                              PM
+                            </div>
+                            <div>
+                              <p class="font-bold text-slate-800 text-xs">Dr. Priya Mehta (Admin)</p>
+                              <p class="text-[10px] text-slate-500 font-medium">Academic Registrar • Full Document Admin</p>
+                            </div>
+                          </div>
+                          <span class="text-[11px] font-bold text-slate-700 group-hover:translate-x-0.5 transition-transform">Log In →</span>
+                        </button>
+                      </div>
+
+                      <div class="relative flex py-1 items-center">
+                        <div class="flex-grow border-t border-slate-200"></div>
+                        <span class="flex-shrink mx-2 text-[10px] text-slate-400 uppercase">Or sign in with email</span>
+                        <div class="flex-grow border-t border-slate-200"></div>
+                      </div>
+
+                      <form onSubmit={(e) => { e.preventDefault(); doLogin(authRole, authEmail, authPassword); }} class="space-y-3">
+                        <div>
+                          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Email or Username</label>
+                          <input
+                            type="text"
+                            value={authEmail}
+                            onChange={(e) => setAuthEmail(e.target.value)}
+                            placeholder="e.g. kmahima138@gmail.com"
+                            class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+                        <div>
+                          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Password</label>
+                          <input
+                            type="password"
+                            value={authPassword}
+                            onChange={(e) => setAuthPassword(e.target.value)}
+                            placeholder="••••••••"
+                            class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+                        <div class="flex gap-2 pt-1">
+                          <button
+                            type="submit"
+                            class="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs"
+                          >
+                            Sign In
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  ) : (
+                    <form onSubmit={doRegister} class="space-y-3 text-xs">
+                      <div>
+                        <label class="block text-[11px] font-semibold text-slate-600 mb-1">Student Full Name</label>
+                        <input
+                          type="text"
+                          value={regName}
+                          onChange={(e) => setRegName(e.target.value)}
+                          placeholder="e.g. Mahima Kumari"
+                          required
+                          class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                      <div>
+                        <label class="block text-[11px] font-semibold text-slate-600 mb-1">University Email</label>
+                        <input
+                          type="email"
+                          value={regEmail}
+                          onChange={(e) => setRegEmail(e.target.value)}
+                          placeholder="kmahima138@gmail.com"
+                          required
+                          class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                      <div class="grid grid-cols-2 gap-2">
+                        <div>
+                          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Course / Degree</label>
+                          <select
+                            value={regCourse}
+                            onChange={(e) => setRegCourse(e.target.value)}
+                            class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500"
+                          >
+                            <option value="MCA">MCA</option>
+                            <option value="B.Tech">B.Tech</option>
+                            <option value="M.Tech">M.Tech</option>
+                            <option value="B.Sc">B.Sc</option>
+                            <option value="MBA">MBA</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Semester</label>
+                          <select
+                            value={regSemester}
+                            onChange={(e) => setRegSemester(e.target.value)}
+                            class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500"
+                          >
+                            <option value="1">Semester 1</option>
+                            <option value="2">Semester 2</option>
+                            <option value="3">Semester 3</option>
+                            <option value="4">Semester 4</option>
+                            <option value="5">Semester 5</option>
+                            <option value="6">Semester 6</option>
+                          </select>
+                        </div>
+                      </div>
+                      <button
+                        type="submit"
+                        class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs mt-2"
+                      >
+                        Create Student Profile & Sign In
+                      </button>
+                    </form>
+                  )}
                 </div>
               </div>
             )}

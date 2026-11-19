@@ -70,3 +70,17 @@ def test_api_analytics_overview():
     data = res.json()
     assert data["total_documents"] >= 3
     assert data["total_chunks"] >= 5
+
+def test_api_auth_login():
+    res_student = client.post("/api/auth/login", json={"email": "kmahima138@gmail.com", "role": "student"})
+    assert res_student.status_code == 200
+    s_data = res_student.json()
+    assert s_data["user"]["name"] == "Mahima Kumari"
+    assert s_data["user"]["course"] == "MCA"
+    assert s_data["user"]["semester"] == 3
+
+    res_admin = client.post("/api/auth/login", json={"email": "admin.academic@uni.edu", "role": "admin"})
+    assert res_admin.status_code == 200
+    a_data = res_admin.json()
+    assert a_data["user"]["role"] == "admin"
+    assert "Admin" in a_data["user"]["name"]

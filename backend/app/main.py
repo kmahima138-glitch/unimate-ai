@@ -11,6 +11,7 @@ from backend.app.api.documents import router as documents_router
 from backend.app.api.notices import router as notices_router
 from backend.app.api.study import router as study_router
 from backend.app.api.analytics import router as analytics_router
+from backend.app.api.auth import router as auth_router
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -33,6 +34,7 @@ app.include_router(documents_router)
 app.include_router(notices_router)
 app.include_router(study_router)
 app.include_router(analytics_router)
+app.include_router(auth_router)
 
 # Mount uploads directory for document previews
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")

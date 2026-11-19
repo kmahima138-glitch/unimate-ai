@@ -143,9 +143,15 @@ class Database:
                 cursor.execute("""
                 INSERT INTO users (id, name, email, role, department, course, semester, created_at)
                 VALUES 
-                ('usr_student_demo', 'Aarav Sharma', 'aarav.sharma@uni.edu', 'student', 'Computer Science & AI', 'B.Tech', 4, ?),
+                ('usr_student_demo', 'Mahima Kumari', 'kmahima138@gmail.com', 'student', 'Computer Applications', 'MCA', 3, ?),
                 ('usr_admin_demo', 'Dr. Priya Mehta (Admin)', 'admin.academic@uni.edu', 'admin', 'Academic Registrar Office', 'Faculty', NULL, ?)
                 """, (now, now))
+            else:
+                # Update demo student profile to Mahima Kumari MCA Sem 3
+                cursor.execute("""
+                UPDATE users SET name = 'Mahima Kumari', email = 'kmahima138@gmail.com', department = 'Computer Applications', course = 'MCA', semester = 3 
+                WHERE id = 'usr_student_demo'
+                """)
 
             conn.commit()
 
