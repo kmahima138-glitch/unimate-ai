@@ -79,8 +79,14 @@
     };
 
     function App() {
+      // URL Query Parameters support
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlTab = urlParams.get('tab');
+      const urlRole = urlParams.get('role');
+
       // Auth & Profile State
       const [currentUser, setCurrentUser] = useState(() => {
+        if (urlRole === 'admin') return DEFAULT_ADMIN;
         try {
           const saved = localStorage.getItem('unimate_user');
           return saved ? JSON.parse(saved) : DEFAULT_STUDENT;
@@ -88,7 +94,7 @@
           return DEFAULT_STUDENT;
         }
       });
-      const [role, setRole] = useState(currentUser.role || 'student');
+      const [role, setRole] = useState(urlRole || currentUser.role || 'student');
       const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
       const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
       const [authEmail, setAuthEmail] = useState('');
@@ -100,7 +106,7 @@
       const [regSemester, setRegSemester] = useState('3');
 
       // Navigation & Tab State
-      const [currentTab, setCurrentTab] = useState('chat'); // 'chat' | 'dashboard' | 'notices' | 'study' | 'admin'
+      const [currentTab, setCurrentTab] = useState(urlTab || 'chat'); // 'chat' | 'dashboard' | 'notices' | 'study' | 'admin'
       const [toast, setToast] = useState(null);
 
       // Chat State
@@ -153,6 +159,9 @@
         loadNotices();
         loadDeadlines();
         loadAnalytics();
+        if (urlTab === 'study') {
+          generateQuiz();
+        }
       }, []);
 
       useEffect(() => {

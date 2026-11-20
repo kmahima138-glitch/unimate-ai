@@ -159,24 +159,39 @@ When an administrator uploads an institutional document, the following discrete 
 ## 6. FUNCTIONAL MODULES & USER INTERFACE
 
 ### 6.1 Conversational AI Chat Assistant
-Provides a fluid, responsive chat environment with multi-turn conversation memory, prompt suggestion pills, text-to-speech audio playback, and clickable source citation drawers.
+Provides a fluid, responsive chat environment with multi-turn conversation memory, prompt suggestion pills, text-to-speech audio playback, and clickable source citation drawers. Each response is augmented with an evidence-confidence badge (Strong, Moderate, Partial, or Insufficient) and exact document references citing specific page numbers.
 
-### 6.2 Smart Notice & Circular Board
-Automatically parses uploaded administrative circulars, using regular expressions to extract stated deadlines (e.g., *25th November 2026*), affected departments (*All Departments*), and target semesters (*All Semesters*). Notices are filterable by categories: Examination, Fees, Scholarship, Admission, Placement, Events, and General.
+![Fig. 1. Conversational AI Chat Interface](screenshots/01_ai_chat_grounded_response.png)
+*Fig. 1. Conversational AI Chat Interface showing grounded query answering for student Mahima Kumari (USN: MCA25SCA113), displaying exact citations to MCA_Handbook pages 10, 6, and 14 with strict grounding enabled.*
 
-### 6.3 Academic Calendar & Deadline Tracker
-Aggregates all extracted deadlines into a unified chronologically ordered dashboard, providing countdown badges and direct traceability to the originating circular.
+### 6.2 Student Dashboard & Academic Calendar Tracker
+The personalized student dashboard welcomes the logged-in student (Mahima Kumari, MCA Semester 3), displaying chronologically sorted academic deadlines, active circular notices, and quick-access reference cards for core academic regulations (attendance, grading scale, revaluation, curfew).
+
+![Fig. 2. Student Dashboard](screenshots/02_student_dashboard.png)
+*Fig. 2. Student Dashboard displaying personalized greeting for Mahima Kumari, upcoming academic deadlines (examination registration on 25th Nov, synopsis submission on 30th Nov), and quick reference cards.*
+
+### 6.3 Smart Notice & Circular Board
+Automatically parses uploaded administrative circulars, using regular expressions to extract stated deadlines (e.g., *25th November 2026*), affected departments (*Computer Applications*), and target semesters (*Semester 3*). Notices are filterable by categories: Examination, Fees, Scholarship, Admission, Placement, Events, and General, featuring instant AI executive summaries.
+
+![Fig. 3. Smart Notice & Circular Board](screenshots/03_smart_notices_circulars.png)
+*Fig. 3. Smart Notice & Circular Board showcasing automated AI summaries, deadline badges, and departmental filtering for MCA students.*
 
 ### 6.4 AI Study Assistant (Practice Quizzes & Flashcards)
 Analyzes syllabus documents to generate 4-option multiple-choice questions (MCQs) for self-study. Each question features an interactive selection interface, automated scoring, pedagogical explanations for correct/incorrect answers, and an explicit disclaimer stating that questions are generated for revision purposes. Interactive flip flashcards facilitate concept memorization.
 
+![Fig. 4. AI Study Assistant & Practice Quizzes](screenshots/04_ai_study_assistant.png)
+*Fig. 4. AI Study Assistant generating syllabus-grounded practice MCQs from MCA_Handbook with interactive answer verification and explanations.*
+
 ### 6.5 Administrative Dashboard & Analytics
-Enables institutional administrators to upload documents, monitor indexing states, view total chunk counts, inspect page-by-page chunk text, and analyze an **Unanswered Queries Log** to identify institutional knowledge gaps.
+Enables institutional administrators (Dr. Priya Mehta, Academic Registrar) to upload documents, monitor indexing states, view total chunk counts (383 chunks indexed), inspect page-by-page chunk text, and analyze an **Unanswered / Low-Evidence Queries Log** to identify institutional knowledge gaps and missing handbook sections.
+
+![Fig. 5. University Administrator Dashboard](screenshots/05_admin_portal_chunk_inspector.png)
+*Fig. 5. University Administrator Dashboard showing document indexing metrics (1 document, 383 chunks, 100% student satisfaction) and unanswered query logs.*
 
 ### 6.6 User Authentication & Profile Personalization
 Maintains authenticated sessions for:
-* **Student:** Mahima Kumari (USN: `MCA25SCA113`, MCA 3rd Semester, Department of Computer Applications).
-* **Administrator:** Dr. Priya Mehta (Academic Registrar Office), with role-protected access to administrative tools.
+* **Student:** Mahima Kumari (USN: `MCA25SCA113`, MCA 3rd Semester, Department of Computer Applications, Dayananda Sagar University).
+* **Administrator:** Dr. Priya Mehta (Academic Registrar Office), with role-protected access to administrative ingestion tools.
 
 ---
 
@@ -235,6 +250,9 @@ UniMate AI is deployed on cloud infrastructure, containerized using Docker:
 * **Production Live Application URL:** [https://unimate-ai-io01.onrender.com](https://unimate-ai-io01.onrender.com)
 * **API Documentation (Swagger/OpenAPI):** [https://unimate-ai-io01.onrender.com/docs](https://unimate-ai-io01.onrender.com/docs)
 * **GitHub Repository:** [https://github.com/kmahima138-glitch/unimate-ai](https://github.com/kmahima138-glitch/unimate-ai)
+
+![Fig. 6. Production Cloud Deployment on Render](screenshots/06_cloud_deployment_render.png)
+*Fig. 6. Production cloud deployment dashboard on Render showing healthy live container service connected to GitHub repository (kmahima138-glitch/unimate-ai) with automated CI/CD deployment.*
 
 ---
 
