@@ -177,3 +177,5 @@ unimate-ai/
 ├── .env.example
 └── README.md
 ```
+
+Authored by Mahima Kumari
