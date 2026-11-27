@@ -101,9 +101,13 @@ SIMILARITY_THRESHOLD=0.38
 UniMate AI includes a comprehensive unit and integration test suite covering PDF/DOCX parsing, chunking with overlap, semantic retrieval, citation mapping, Hindi language handling, and strict insufficient-evidence refusal:
 
 ```bash
-cd unimate-ai
-PYTHONPATH=. ./venv/bin/pytest backend/tests/ -v
+python -m pip install -r requirements.txt
+python -m pytest backend/tests/ -v
 ```
+
+### Continuous Integration
+
+GitHub Actions runs the test suite on pushes to `main` and on pull requests targeting `main`, using Python 3.11. The tests run in offline mode and do not require a Gemini API key. A failed check will appear on the pull request with logs explaining the failure.
 
 ### Verified Test Results:
 - `test_chunking_preserves_page_numbers_and_metadata`: PASSED

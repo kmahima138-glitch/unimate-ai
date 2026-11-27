@@ -1,12 +1,12 @@
-import os
+from pathlib import Path
 import pytest
 from backend.app.services.text_extraction import TextExtractionService
 
-SAMPLE_DIR = "/Users/prince/Desktop/Code/unimate-ai/data/sample_docs"
+SAMPLE_DIR = Path(__file__).resolve().parents[2] / "data" / "sample_docs"
 
 def test_extract_pdf_pages_and_metadata():
-    pdf_path = os.path.join(SAMPLE_DIR, "academic_regulations_2026.pdf")
-    pages, meta = TextExtractionService.extract_from_pdf(pdf_path)
+    pdf_path = SAMPLE_DIR / "academic_regulations_2026.pdf"
+    pages, meta = TextExtractionService.extract_from_pdf(str(pdf_path))
     
     assert len(pages) == 3
     assert pages[0].page_number == 1
@@ -17,8 +17,8 @@ def test_extract_pdf_pages_and_metadata():
     assert meta["page_count"] == 3
 
 def test_extract_docx_paragraphs():
-    docx_path = os.path.join(SAMPLE_DIR, "hostel_and_mess_regulations_2026.docx")
-    pages, meta = TextExtractionService.extract_from_docx(docx_path)
+    docx_path = SAMPLE_DIR / "hostel_and_mess_regulations_2026.docx"
+    pages, meta = TextExtractionService.extract_from_docx(str(docx_path))
     
     assert len(pages) >= 1
     combined = " ".join([p.text for p in pages])
