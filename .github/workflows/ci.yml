@@ -33,6 +33,9 @@ jobs:
           echo "UPLOAD_DIR=$RUNNER_TEMP/unimate-test-data/uploads" >> "$GITHUB_ENV"
           echo "CHROMA_PERSIST_DIR=$RUNNER_TEMP/unimate-test-data/chromadb" >> "$GITHUB_ENV"
 
+      - name: Generate sample documents
+        run: python -m backend.scripts.generate_sample_docs
+
       - name: Seed test database
         run: python -m backend.scripts.seed_knowledge_base
 
